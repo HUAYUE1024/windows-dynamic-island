@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>灵动岛设置</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- The same displacement pipeline the island uses, so the preview's refraction is
+     the real thing and not a painted imitation. The region is locked to 100%: a
+     larger one drags content from outside the element in and grows a band of
+     duplicated colour above the pill. -->
+<svg class="pv-defs" aria-hidden="true" focusable="false">
+  <defs>
+    <filter id="pv-refract" x="0%" y="0%" width="100%" height="100%"
+            color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.004 0.006" numOctaves="1"
+                    seed="7" result="n"/>
+      <feGaussianBlur in="n" stdDeviation="10" result="soft"/>
+      <feDisplacementMap id="pv-refract-map" in="SourceGraphic" in2="soft" scale="28"
+                         xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="shell">
+
+  <!-- Left column: the live glass preview on top, the section rail under it. -->
+  <aside class="rail-col">
+
+    <div class="preview" id="preview">
+      <!-- The same five-layer glass stack as the island, at pill scale. Every
+           property here is driven by the settings on the right, so what you drag is
+           what you see. -->
+      <div class="pv-stage">
+        <div class="pv-island" id="pv-island">
+          <div class="pv-spot"></div>
+          <div class="pv-rim"></div>
+          <div class="pv-body">
+            <span class="pv-art"></span>
+            <span class="pv-wave"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="pv-src">Liquid Island</span>
+          </div>
+        </div>
+      </div>
+      <div class="pv-foot">
+        <span class="pv-caption">实时预览</span>
+        <button class="pv-play" id="pv-play" type="button" aria-label="预览展开动画">
+          <svg viewBox="0 0 24 24"><path d="M8 4.8v14.4a.8.8 0 0 0 1.22.68l11.2-7.2a.8.8 0 0 0 0-1.36L9.22 4.12A.8.8 0 0 0 8 4.8z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <nav class="rail" id="rail" aria-label="设置分组"></nav>
+
+    <div class="rail-foot">
+      <button id="reset" class="ghost" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+        恢复默认
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- Right column: the active section. -->
+  <main class="content">
+    <header class="content-head">
+      <h1 id="sec-title"></h1>
+      <p id="sec-sub" class="sub"></p>
+    </header>
+    <div id="groups" class="groups"></div>
+    <footer class="content-foot">
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </footer>
+  </main>
+
+</div>
+
+<script type="module" src="renderer.js"></script>
+</body>
+</html>

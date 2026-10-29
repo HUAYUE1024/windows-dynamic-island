@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>probe fixture</title></head>
+<body>
+<audio id="a" src="tone.wav" loop></audio>
+<canvas id="c" width="256" height="256" style="display:none"></canvas>
+<script>
+const a = document.getElementById('a');
+a.volume = 0.0001;
+a.play().then(() => {
+  document.title = `fixture playing=${!a.paused} t=${a.currentTime.toFixed(1)}`;
+  setInterval(() => {
+    document.title = `fixture playing=${!a.paused} t=${a.currentTime.toFixed(1)}`;
+  }, 500);
+}).catch(e => { document.title = 'play failed: ' + e; });
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+ctx.fillStyle = '#3b6fd4';
+ctx.fillRect(0, 0, 256, 256);
+ctx.fillStyle = '#fff';
+ctx.font = '40px sans-serif';
+ctx.fillText('ART', 90, 140);
+const art = cv.toDataURL('image/png');
+
+navigator.mediaSession.metadata = new MediaMetadata({
+  title: 'Probe Fixture Track',
+  artist: 'Test Artist',
+  album: 'SMTC Fixture Album',
+  artwork: [{ src: art, sizes: '256x256', type: 'image/png' }],
+});
+for (const act of ['play', 'pause', 'nexttrack', 'previoustrack']) {
+  navigator.mediaSession.setActionHandler(act, () => {});
+}
+
+// Chrome only reports a usable timeline to SMTC when the page pushes position state.
+setInterval(() => {
+  if (navigator.mediaSession.setPositionState) {
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: Number.isFinite(a.duration) ? a.duration : 120,
+        playbackRate: 1,
+        position: a.currentTime,
+      });
+    } catch {}
+  }
+}, 500);
+</script>
+</body>
+</html>

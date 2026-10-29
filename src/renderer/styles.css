@@ -1,0 +1,922 @@
+/* Liquid Glass island — Apple optical stack, per the 5-layer spec.
+   Layer 1 .lg-spotlight  dynamic specular tracking
+   Layer 2 .lg-rim        Fresnel gradient rim + SVG caustic refraction
+   Layer 3 .island        backdrop transmittance + surface gradient + volumetric bevel
+   Layer 4 .stage         content, cross-faded between collapsed and expanded
+
+   --lg-blur / --lg-refract / --lg-tint / --island-opacity / --morph-ms are set
+   from settings by the renderer, so the glass is tunable without a rebuild. */
+
+:root {
+  --lg-blur: 26px;
+  --lg-saturate: 195%;
+  --lg-brightness: 108%;
+  --lg-tint: 0.34;
+  --lg-refract: 28;
+  --lg-rim-intensity: 0.78;
+  --island-opacity: 1;
+  --morph-ms: 240ms;
+
+  --lg-radius-pill: 9999px;
+  --lg-radius-xl: 38px;
+  --lg-radius-md: 20px;
+
+  /* Decisive ease-out with no overshoot and no settle tail: the morph reads as
+     one gesture instead of a bounce. A spring here looked like the card jumping. */
+  --ease-glass: cubic-bezier(0.25, 1, 0.5, 1);
+
+  --island-w: 238px;
+  --island-h: 48px;
+  --island-w-open: 384px;
+  --island-h-open: 246px;
+
+  --accent: 210;
+  --rim-angle: 135deg;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font: 14px/1.45 "Segoe UI Variable Display", "Segoe UI", "PingFang SC",
+        "Microsoft YaHei UI", system-ui, sans-serif;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+}
+
+.lg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* ── Layer 3: the glass itself ─────────────────────────────────────────── */
+.island {
+  position: absolute;
+  top: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--island-w);
+  height: var(--island-h);
+  border-radius: var(--lg-radius-pill);
+  isolation: isolate;
+  overflow: hidden;
+  opacity: var(--island-opacity);
+  cursor: pointer;
+
+  /* The tint has to stay light or it buries the displaced backdrop: the whole
+     point of the refraction is that you can see the bend through the glass. */
+  background:
+    linear-gradient(135deg,
+      rgba(255, 255, 255, 0.15) 0%,
+      rgba(255, 255, 255, 0.05) 48%,
+      rgba(255, 255, 255, 0.1) 100%),
+    rgba(12, 14, 24, var(--lg-tint));
+
+  /* feDisplacementMap runs on the BACKDROP, so what sits under the glass is
+     genuinely bent rather than merely blurred. */
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness)) url(#glass-refract);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) brightness(var(--lg-brightness)) url(#glass-refract);
+
+  box-shadow:
+    inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.68),
+    inset 0 -1.5px 2.5px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 32px 0 rgba(255, 255, 255, 0.07),
+    0 18px 40px -10px rgba(2, 4, 16, 0.5),
+    0 4px 12px -2px rgba(0, 0, 0, 0.22);
+
+  /* box-shadow is deliberately NOT transitioned: five layers re-rasterise every
+     frame, and that is most of what read as jank during the morph. */
+  transition:
+    width var(--morph-ms) var(--ease-glass),
+    height var(--morph-ms) var(--ease-glass),
+    border-radius var(--morph-ms) var(--ease-glass);
+}
+
+.island[data-open="1"] {
+  width: var(--island-w-open);
+  height: var(--island-h-open);
+  border-radius: var(--lg-radius-xl);
+  cursor: default;
+}
+
+/* Bottom-anchored positions put the window at the bottom of the screen, so the
+   glass anchors to the bottom of that window. 32px matches WIN.margin, which is
+   also what islandRect() assumes when it computes the click-through hit rect. */
+.island[data-vert="bottom"] {
+  top: auto;
+  bottom: 32px;
+}
+
+/* Pinned: the card stays open after the pointer leaves. */
+.island[data-pinned="1"] {
+  box-shadow:
+    inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.68),
+    inset 0 -1.5px 2.5px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 32px 0 rgba(255, 255, 255, 0.07),
+    0 0 0 1.5px rgba(255, 255, 255, 0.32),
+    0 18px 40px -10px rgba(2, 4, 16, 0.5),
+    0 4px 12px -2px rgba(0, 0, 0, 0.22);
+}
+
+.island[data-pinned="1"] .lg-rim {
+  background: linear-gradient(var(--rim-angle),
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.4) 36%,
+    rgba(255, 255, 255, 0.12) 65%,
+    rgba(255, 255, 255, 0.6) 100%);
+}
+
+/* Low battery: the glass takes on an amber cast so the alert is visible at a glance. */
+.island[data-alert="1"] .lg-rim {
+  background: linear-gradient(var(--rim-angle),
+    rgba(255, 186, 110, 0.95) 0%,
+    rgba(255, 170, 80, 0.45) 36%,
+    rgba(255, 160, 70, 0.12) 65%,
+    rgba(255, 180, 95, 0.65) 100%);
+}
+
+.island[data-alert="1"] .mod-name { color: rgba(255, 196, 130, 0.85); }
+
+/* ── Layer 2: Fresnel rim with liquid caustic refraction ───────────────── */
+.lg-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.25px;
+  background: linear-gradient(var(--rim-angle),
+    rgba(255, 255, 255, var(--lg-rim-intensity)) 0%,
+    rgba(255, 255, 255, 0.18) 36%,
+    rgba(255, 255, 255, 0.03) 65%,
+    rgba(255, 255, 255, calc(var(--lg-rim-intensity) * 0.42)) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  filter: url(#liquid-refraction);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* ── Layer 1: specular tracking ────────────────────────────────────────── */
+.lg-spotlight {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(420px circle at var(--mouse-x, 50%) var(--mouse-y, 0%),
+    rgba(255, 255, 255, 0.24),
+    rgba(255, 255, 255, 0.05) 40%,
+    transparent 75%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: overlay;
+}
+
+.island[data-hover="1"] .lg-spotlight,
+.island[data-open="1"] .lg-spotlight { opacity: 1; }
+
+.island[data-specular="0"] .lg-spotlight { display: none; }
+
+/* ── Layer 4: content stages ───────────────────────────────────────────── */
+.stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  transition:
+    opacity 0.2s var(--ease-glass),
+    transform var(--morph-ms) var(--ease-glass);
+}
+
+.island[data-open="1"] .stage-expanded button,
+.island[data-open="1"] .stage-expanded input,
+.island[data-open="1"] .stage-expanded [tabindex] { pointer-events: auto; }
+
+/* cross-fade the two stages — without these both render on top of each other */
+.island[data-open="0"] .stage-expanded { opacity: 0; transform: scale(0.94); }
+.island[data-open="1"] .stage-collapsed { opacity: 0; transform: scale(0.94); }
+
+/* The container morphs first; the contents arrive just behind it, which is what
+   makes the island read as one piece of glass deforming rather than a box resizing. */
+.island[data-open="1"] .stage-expanded > * {
+  animation: settle-in 0.34s var(--ease-glass) both;
+}
+
+.island[data-open="1"] .mod-body { animation-delay: 0.04s; }
+.island[data-open="1"] .mod-foot { animation-delay: 0.07s; }
+
+@keyframes settle-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* collapsed pill */
+.stage-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 15px;
+}
+
+.mod-icon {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  opacity: 0.82;
+}
+
+.mod-icon svg { width: 14px; height: 14px; fill: currentColor; }
+
+/* the media module shows its cover instead of a generic icon */
+.island[data-module="media"][data-hasart="1"] .mod-icon { display: none; }
+
+.src {
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.86);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  max-width: 132px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.island[data-mode="idle"] .src { animation: breathe 2.8s ease-in-out infinite; }
+.island[data-mode="idle"] .clock { display: none; }
+.clock { margin-left: 6px; opacity: 0.62; font-variant-numeric: tabular-nums; }
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.98; }
+}
+
+/* ── expanded card shell ───────────────────────────────────────────────── */
+.stage-expanded {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 2px;
+  padding: 14px 20px 16px;
+}
+
+.mod-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mod-name {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.mod-dots { display: flex; gap: 3px; }
+
+/* Icon rail, not anonymous dots: each entry has to say which module it is without
+   a tooltip, because a frameless always-on-top window shows those late. */
+.mod-dot {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.42);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.25s var(--ease-glass);
+}
+
+.mod-dot svg { width: 13px; height: 13px; fill: currentColor; }
+.mod-dot:hover { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.85); }
+.mod-dot:active { transform: scale(0.9); }
+.mod-dot[aria-current="true"] {
+  background: rgba(255, 255, 255, 0.92);
+  color: #14161f;
+}
+
+.mod-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  padding: 4px 0;
+}
+
+/* switching modules is a swap, not a rebuild — give it a beat of motion.
+   The extra .island ancestor is needed to outrank the settle-in rule above
+   (same specificity, later source order wins). */
+.island .mod-body.swap-in {
+  animation: swap-in 0.26s var(--ease-glass) both;
+}
+
+/* The horizontal offset carries the direction the user travelled along the rail,
+   so switching feels like moving through a list rather than the card resetting. */
+.island .mod-body.swap-in.swap-from-right { animation-name: swap-in-right; }
+.island .mod-body.swap-in.swap-from-left { animation-name: swap-in-left; }
+
+@keyframes swap-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes swap-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes swap-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The module name and footer join the swap so a page change reads as one motion
+   instead of the body sliding while the header snaps. */
+.island .mod-name.name-swap { animation: name-swap 0.26s var(--ease-glass) both; }
+.island .mod-foot.foot-swap { animation: name-swap 0.3s var(--ease-glass) 40ms both; }
+
+@keyframes name-swap {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.mod-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+/* ── artwork ───────────────────────────────────────────────────────────── */
+.art {
+  position: relative;
+  flex: none;
+  border-radius: 14px;
+  overflow: visible;
+  background: linear-gradient(135deg,
+    hsl(var(--accent) 82% 58%),
+    hsl(calc(var(--accent) + 58) 78% 46%));
+}
+
+.art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  display: block;
+  position: relative;
+  z-index: 1;
+  transition: transform var(--morph-ms) var(--ease-glass);
+}
+
+.island[data-open="1"] .art-lg img { transform: scale(1.03); }
+.island[data-hasart="0"] .art img { opacity: 0; }
+
+.art-glow {
+  position: absolute;
+  inset: -22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%,
+    hsl(var(--accent) 92% 62% / 0.9), transparent 70%);
+  filter: blur(28px);
+  opacity: 0;
+  transition: opacity 0.55s ease;
+  pointer-events: none;
+}
+
+.island[data-hasart="0"] .art-glow { opacity: 0.85; }
+.island[data-hasart="1"][data-open="1"] .art-glow { opacity: 0.5; }
+
+.art-sm { width: 30px; height: 30px; border-radius: 10px; }
+.art-lg { width: 66px; height: 66px; border-radius: var(--lg-radius-md); }
+
+/* ── shared text ───────────────────────────────────────────────────────── */
+.big {
+  font-size: 26px;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.mid {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.dim { color: rgba(255, 255, 255, 0.45); }
+
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── music module ──────────────────────────────────────────────────────── */
+.m-media { flex-direction: row; align-items: center; gap: 14px; }
+
+.m-media .meta { min-width: 0; flex: 1; }
+
+.m-media .title {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.m-media .artist {
+  margin-top: 1px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  mix-blend-mode: plus-lighter;
+}
+
+.track {
+  position: relative;
+  height: 5px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.track::after { content: ""; position: absolute; inset: -9px 0; }
+
+.track-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  transform: scaleX(var(--p, 0));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), #fff);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+}
+
+.track-knob {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--p, 0) * 100%);
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5), 0 0 12px rgba(255, 255, 255, 0.55);
+  transform: scale(0);
+  transition: transform 0.22s var(--ease-glass);
+  pointer-events: none;
+}
+
+.island[data-open="1"] .track:hover .track-knob,
+.track[data-dragging="1"] .track-knob,
+.track:focus-visible .track-knob { transform: scale(1); }
+
+.track[data-dragging="1"] .track-knob { transform: scale(1.25); transition-duration: 0.12s; }
+.track:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.85); outline-offset: 5px; }
+
+.times {
+  display: flex;
+  /* space-between pushed the two labels to opposite edges of the meta column, which
+     read as lopsided next to a centred bar. */
+  justify-content: center;
+  gap: 14px;
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── volume module ─────────────────────────────────────────────────────── */
+.m-volume { gap: 10px; }
+
+.slider {
+  position: relative;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.slider:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.slider-rail {
+  position: relative;
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.slider-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  transform: scaleX(var(--p, 0));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.72), #fff);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.5);
+}
+
+.slider-knob {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--p, 0) * 100%);
+  width: 17px;
+  height: 17px;
+  margin: -8.5px 0 0 -8.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.5), 0 0 14px rgba(255, 255, 255, 0.5);
+  transform: scale(1);
+  transition: transform 0.2s var(--ease-glass);
+}
+
+.slider[data-dragging="1"] .slider-knob { transform: scale(1.18); }
+
+/* ── bars (battery / perf) ─────────────────────────────────────────────── */
+.bars { display: flex; flex-direction: column; gap: 9px; }
+
+.bar-row { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 10px; }
+
+.bar-label { font-size: 11.5px; color: rgba(255, 255, 255, 0.6); }
+
+.bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.bar-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  transform: scaleX(var(--p, 0));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.7), #fff);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+  transition: transform 0.35s var(--ease-glass);
+}
+
+.bar-fill[data-warn="1"] {
+  background: linear-gradient(90deg, rgba(255, 176, 92, 0.85), #ffb45c);
+  box-shadow: 0 0 12px rgba(255, 170, 80, 0.5);
+}
+
+.bar-value { font-size: 11.5px; color: rgba(255, 255, 255, 0.78); font-variant-numeric: tabular-nums; }
+
+/* ── list modules (todo / clipboard) ───────────────────────────────────── */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 118px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.list::-webkit-scrollbar { width: 4px; }
+.list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 6px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  /* Rows must swallow their own clicks; with pointer-events inherited from .stage
+     (none) a click on the row text fell through to the island and pinned the card. */
+  pointer-events: auto;
+  transition: background 0.18s ease;
+}
+
+.list-item:hover { background: rgba(255, 255, 255, 0.07); }
+
+/* Clipboard rows are the primary click target (click = paste back), so they get a
+   cursor and a pressed state the todo rows do not need. */
+.clip-row { cursor: pointer; }
+.clip-row:active { transform: scale(0.985); }
+
+.clip-idx {
+  flex: none;
+  width: 13px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.clip-row[data-sel="1"] { background: rgba(255, 255, 255, 0.12); }
+.clip-row[data-sel="1"] .clip-idx { color: rgba(255, 255, 255, 0.75); }
+
+/* One-shot confirmation that the paste round-trip actually landed. */
+.clip-row[data-pasted="1"] {
+  animation: clip-pasted 1.2s ease both;
+}
+
+@keyframes clip-pasted {
+  0% { background: rgba(120, 255, 190, 0.32); }
+  100% { background: rgba(255, 255, 255, 0); }
+}
+
+.list-item .txt { flex: 1; min-width: 0; }
+
+.list-item[data-done="1"] .txt { opacity: 0.42; text-decoration: line-through; }
+
+.check {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+
+.check:checked { background: #fff; border-color: #fff; }
+.check:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #0b0e18;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.icon-btn {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.icon-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.icon-btn svg { width: 12px; height: 12px; fill: currentColor; }
+
+.add-row { display: flex; gap: 8px; margin-top: 6px; }
+
+.add-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.add-row input:focus { border-color: rgba(255, 255, 255, 0.4); }
+.add-row input::placeholder { color: rgba(255, 255, 255, 0.35); }
+
+/* inline edit of a todo item */
+.list-item input.edit {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+/* timer presets */
+.presets { display: flex; gap: 6px; margin-top: 2px; }
+
+.preset {
+  appearance: none;
+  padding: 4px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.66);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.preset:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+
+.preset[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: transparent;
+  color: #0b0e18;
+  font-weight: 600;
+}
+
+.empty { font-size: 12px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 14px 0; }
+
+/* ── quick actions grid ────────────────────────────────────────────────── */
+.grid-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.quick-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  padding: 11px 4px 9px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.18s ease, transform 0.25s var(--ease-glass);
+}
+
+.quick-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.quick-btn:active { transform: scale(0.95); }
+.quick-btn svg { width: 17px; height: 17px; fill: currentColor; opacity: 0.9; }
+
+/* armed state for destructive actions */
+.quick-btn[data-armed="1"] {
+  background: rgba(255, 108, 92, 0.9);
+  border-color: transparent;
+  color: #2a0b06;
+  font-weight: 650;
+}
+
+.quick-btn[data-armed="1"] svg { opacity: 1; }
+
+/* ── buttons ───────────────────────────────────────────────────────────── */
+.controls { display: flex; align-items: center; gap: 12px; }
+
+.btn {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition:
+    transform 0.3s var(--ease-glass),
+    background 0.22s ease,
+    box-shadow 0.22s ease,
+    opacity 0.22s ease,
+    color 0.22s ease;
+}
+
+.btn svg { width: 16px; height: 16px; fill: currentColor; }
+.btn:hover { background: rgba(255, 255, 255, 0.2); }
+.btn:active { transform: scale(0.9); }
+.btn:disabled { opacity: 0.3; cursor: default; }
+.btn:disabled:active { transform: none; }
+
+.btn-main {
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0b0e18;
+}
+
+.btn-main svg { width: 19px; height: 19px; }
+
+.btn-main:hover {
+  background: #fff;
+  box-shadow: 0 0 22px rgba(255, 255, 255, 0.45), inset 0 1px 0 #fff;
+}
+
+/* Scoped to the media module: the timer also uses .btn-main for its play/pause, and
+   an unscoped rule hid its pause icon whenever media happened to be playing. */
+.island[data-module="media"] .btn-main .i-pause { display: none; }
+.island[data-module="media"][data-mode="playing"] .btn-main .i-play { display: none; }
+.island[data-module="media"][data-mode="playing"] .btn-main .i-pause { display: block; }
+
+.btn-toggle {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.btn-toggle svg { width: 13px; height: 13px; }
+
+.btn-toggle[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.88);
+  color: #0b0e18;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.4);
+}
+
+.btn-toggle[aria-pressed="true"] .dot { opacity: 1; }
+
+.btn-toggle .dot {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* ── waveform ──────────────────────────────────────────────────────────── */
+.wave { display: flex; align-items: center; gap: 3px; height: 18px; }
+.island[data-waveform="0"] .wave { display: none; }
+
+.wave i {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #fff, rgba(255, 255, 255, 0.5));
+  transform: scaleY(0.2);
+  transform-origin: center;
+  animation: wave 1.05s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+.island[data-mode="playing"] .wave i { animation-play-state: running; }
+
+.wave i:nth-child(2) { animation-duration: 0.88s; animation-delay: -0.21s; }
+.wave i:nth-child(3) { animation-duration: 1.22s; animation-delay: -0.42s; }
+.wave i:nth-child(4) { animation-duration: 0.96s; animation-delay: -0.13s; }
+.wave i:nth-child(5) { animation-duration: 1.12s; animation-delay: -0.55s; }
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.2); }
+  50% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island, .stage, .btn, .track-fill, .track-knob, .slider-knob, .bar-fill, .art img,
+  .mod-dot, .quick-btn { transition-duration: 0.12s; }
+  .wave i, .island[data-mode="idle"] .src { animation: none; }
+  .island[data-open="1"] .stage-expanded > * { animation-duration: 0.12s; }
+}
+
+/* ── global affordances ────────────────────────────────────────────────── */
+/* Keyboard users get a ring; mouse users never see it. */
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.btn:active:not(:disabled), .quick-btn:active:not(:disabled) { transform: scale(0.94); }

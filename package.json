@@ -1,0 +1,17 @@
+{
+  "name": "liquid-island",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows dynamic island with Apple Liquid Glass optics, driven by SMTC media state",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "build:probe": "node scripts/build-probe.mjs",
+    "start": "electron .",
+    "test": "node --test test/island-state.test.mjs test/settings.test.mjs test/modules.test.mjs",
+    "dist": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "electron": "^33.4.0"
+  }
+}

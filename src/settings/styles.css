@@ -1,0 +1,549 @@
+/* Settings window. Same material family as the island: a dark ground, translucent
+   panels with hairline edges, one restrained accent, and the same ease-out curve the
+   island morphs with. Nothing here animates longer than the island's own morph. */
+
+:root {
+  --bg: #0a0c12;
+  --bg-2: #0e1119;
+  --panel: rgba(255, 255, 255, 0.042);
+  --panel-hi: rgba(255, 255, 255, 0.07);
+  --line: rgba(255, 255, 255, 0.085);
+  --line-hi: rgba(255, 255, 255, 0.16);
+  --ink: #f4f6fa;
+  --ink-2: rgba(244, 246, 250, 0.64);
+  --ink-3: rgba(244, 246, 250, 0.38);
+  --accent: #6f8cff;
+  --accent-soft: rgba(111, 140, 255, 0.16);
+  --warn: #ffb463;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --dur: 0.24s;
+}
+
+* { box-sizing: border-box; }
+
+.pv-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(120% 80% at 12% -10%, rgba(111, 140, 255, 0.13), transparent 60%),
+    radial-gradient(90% 70% at 100% 0%, rgba(255, 255, 255, 0.05), transparent 55%),
+    var(--bg);
+  color: var(--ink);
+  font: 13.5px/1.55 "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+        "Microsoft YaHei UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ── shell ─────────────────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: 216px 1fr;
+  height: 100vh;
+}
+
+/* ── left column ───────────────────────────────────────────────────────── */
+.rail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 14px 16px;
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 40%);
+  min-height: 0;
+}
+
+/* ── live glass preview ────────────────────────────────────────────────── */
+.preview {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+  flex: none;
+}
+
+/* A slice of "desktop" behind the glass, so blur and refraction have something to
+   act on. Without it the preview is a grey pill and proves nothing. */
+.pv-stage {
+  position: relative;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(115deg, #2b3a6b 0%, #7b4a8f 34%, #c8624f 62%, #e0a94e 100%);
+  isolation: isolate;
+}
+
+.pv-stage::after {
+  /* Fine detail for the blur to smear — a flat gradient blurs to a flat gradient. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(45deg,
+    rgba(255, 255, 255, 0.14) 0 2px, transparent 2px 9px);
+  mix-blend-mode: overlay;
+}
+
+.pv-island {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 128px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 999px;
+  /* Driven from renderer.js off the live settings. */
+  backdrop-filter: blur(var(--pv-blur, 26px)) saturate(195%) brightness(108%)
+    url(#pv-refract);
+  -webkit-backdrop-filter: blur(var(--pv-blur, 26px)) saturate(195%) brightness(108%);
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, calc(0.22 * var(--pv-tint, 0.34))),
+    rgba(255, 255, 255, calc(0.08 * var(--pv-tint, 0.34))) 42%,
+    rgba(255, 255, 255, calc(0.14 * var(--pv-tint, 0.34))));
+  opacity: var(--pv-opacity, 1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: width var(--pv-morph, 320ms) var(--ease),
+              height var(--pv-morph, 320ms) var(--ease),
+              backdrop-filter var(--dur) linear, background var(--dur) linear;
+}
+
+.pv-spot {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(60px circle at 30% 20%, rgba(255, 255, 255, 0.3), transparent 70%);
+  opacity: var(--pv-specular, 1);
+  pointer-events: none;
+}
+
+.pv-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.25) 40%, rgba(255, 255, 255, 0.6));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.pv-body { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.pv-art {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 6px;
+  background: linear-gradient(140deg, #4fd8a8, #1f8f6b);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.pv-wave { display: flex; align-items: flex-end; gap: 2px; height: 13px; flex: none; }
+.pv-wave i {
+  width: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.9);
+  animation: pv-wave 1.05s ease-in-out infinite;
+}
+.pv-wave i:nth-child(1) { height: 40%; animation-delay: -0.1s; }
+.pv-wave i:nth-child(2) { height: 85%; animation-delay: -0.35s; }
+.pv-wave i:nth-child(3) { height: 55%; animation-delay: -0.6s; }
+.pv-wave i:nth-child(4) { height: 100%; animation-delay: -0.2s; }
+.pv-wave i:nth-child(5) { height: 65%; animation-delay: -0.5s; }
+
+@keyframes pv-wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+
+.pv-src {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Expanded state, so the morph setting has something to show. */
+.pv-island[data-open="1"] {
+  width: 176px;
+  height: 62px;
+  border-radius: 22px;
+  align-items: flex-start;
+  padding: 9px 11px;
+}
+.pv-island[data-open="1"] .pv-wave { display: none; }
+
+.pv-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 9px 7px 11px;
+  border-top: 1px solid var(--line);
+}
+
+.pv-caption {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.pv-play {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--ink-2);
+  width: 24px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+.pv-play:hover { color: var(--ink); background: var(--panel-hi); border-color: var(--line-hi); }
+.pv-play:active { transform: scale(0.94); }
+.pv-play svg { width: 12px; height: 12px; fill: currentColor; }
+.pv-play[data-open="1"] { color: var(--accent); border-color: rgba(111, 140, 255, 0.4); }
+
+/* ── section rail ──────────────────────────────────────────────────────── */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.rail-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.rail-item:hover { background: var(--panel); color: var(--ink); }
+
+.rail-item[aria-current="true"] {
+  background: var(--accent-soft);
+  color: #fff;
+  font-weight: 600;
+}
+
+.rail-item svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: currentColor;
+  opacity: 0.85;
+}
+
+.rail-item[aria-current="true"] svg { opacity: 1; color: var(--accent); }
+
+.rail-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
+
+button.ghost {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+button.ghost svg { width: 13px; height: 13px; fill: currentColor; }
+button.ghost:hover { color: var(--ink); border-color: var(--line-hi); background: var(--panel); }
+button.ghost[data-armed="1"] {
+  color: #ffd7ae;
+  border-color: rgba(255, 180, 99, 0.55);
+  background: rgba(255, 180, 99, 0.12);
+}
+
+/* ── right column ──────────────────────────────────────────────────────── */
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 22px 26px 0;
+}
+
+.content-head { flex: none; }
+.content-head h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+.content-head .sub { margin: 3px 0 18px; font-size: 12px; color: var(--ink-3); }
+
+.groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-bottom: 8px;
+}
+
+.group { animation: group-in var(--dur) var(--ease) both; }
+
+@keyframes group-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.rows {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  transition: background 0.16s ease;
+}
+.row:last-child { border-bottom: 0; }
+.row:hover { background: rgba(255, 255, 255, 0.018); }
+
+.row .label { font-size: 13px; }
+.row .hint { margin-top: 2px; font-size: 11px; color: var(--ink-3); line-height: 1.45; }
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 196px;
+  justify-content: flex-end;
+}
+
+.value {
+  min-width: 54px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── range: the fill is the value ──────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 128px;
+  /* Tall enough that the thumb is not a dead zone; the visible track is drawn by
+     ::-webkit-slider-runnable-track below. */
+  height: 18px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 999px;
+  /* --fill is kept in step by the renderer. Without it the track was a flat grey
+     line: the thumb moved but nothing on screen showed the value. */
+  background: linear-gradient(to right,
+    var(--accent) 0 var(--fill, 0%),
+    rgba(255, 255, 255, 0.13) var(--fill, 0%) 100%);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4.5px;   /* centres the thumb on the 5px track */
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55), 0 0 0 0 var(--accent-soft);
+  transition: box-shadow 0.18s ease, transform 0.18s var(--ease);
+}
+
+input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.12); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.2); }
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55), 0 0 0 4px var(--accent-soft);
+}
+
+/* ── select / text ─────────────────────────────────────────────────────── */
+select,
+input[type="text"] {
+  appearance: none;
+  min-width: 152px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+select {
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23888f9e'><path d='M7 10l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 14px;
+  cursor: pointer;
+}
+
+select:hover, input[type="text"]:hover { border-color: var(--line-hi); }
+select:focus, input[type="text"]:focus { border-color: var(--accent); background: rgba(111, 140, 255, 0.08); }
+
+/* Shortcut fields: a bound accelerator reads as settled, an unbound one as a
+   problem, because globalShortcut.register failing is silent by nature. */
+input[type="text"].kbd { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: 0.01em; }
+input[type="text"].kbd[data-bound="0"] { border-color: rgba(255, 180, 99, 0.5); color: #ffd7ae; }
+
+/* ── switch ────────────────────────────────────────────────────────────── */
+.switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: background 0.24s var(--ease);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 0.28s var(--ease);
+}
+
+.switch:hover { background: rgba(255, 255, 255, 0.18); }
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]:hover { background: #829dff; }
+.switch[aria-checked="true"]::after { transform: translateX(18px); }
+.switch:active::after { width: 20px; }
+
+/* ── module chips ──────────────────────────────────────────────────────── */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  max-width: 252px;
+}
+
+.chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease,
+              transform 0.18s var(--ease);
+}
+.chip:hover { color: var(--ink); border-color: var(--line-hi); }
+.chip:active { transform: scale(0.96); }
+
+.chip svg { width: 12px; height: 12px; fill: currentColor; opacity: 0.8; }
+
+.chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: rgba(111, 140, 255, 0.45);
+  color: #dfe6ff;
+  font-weight: 600;
+}
+.chip[aria-pressed="true"] svg { opacity: 1; color: var(--accent); }
+
+/* ── footer ────────────────────────────────────────────────────────────── */
+.content-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+}
+
+.status { font-size: 11.5px; color: var(--ink-3); transition: color 0.2s ease; }
+.status[data-state="saving"] { color: var(--ink-2); }
+.status[data-state="saved"] { color: #7fd8a8; }
+.status[data-state="warn"] { color: var(--warn); }
+
+/* The platform default is a light slab that cuts through the dark panels. The
+   2px transparent border + background-clip insets the thumb, so it reads as a
+   hairline floating over the panel rather than a bar riveted to its edge. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

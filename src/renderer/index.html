@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Liquid Island</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- 液态折射管线：菲涅尔边缘的焦散位移 + 玻璃本体的背景折射 -->
+<svg class="lg-defs" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- 边缘的细微液态晃动 -->
+    <filter id="liquid-refraction" x="-12%" y="-12%" width="124%" height="124%"
+            color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.016 0.02" numOctaves="2" seed="14" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="3" result="softNoise"/>
+      <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="7"
+                         xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+
+    <!-- 玻璃本体的折射：位移的是 backdrop，所以玻璃后面的东西真的被弯折。
+         区域锁死 100%：超出元素的滤镜区会把边界外的内容也拖进来，在玻璃上方
+         长出重复的色块。baseFrequency 压到很低是为了得到平滑的透镜式畸变，
+         而不是噪点。scale 由设置动态改写。 -->
+    <filter id="glass-refract" x="0%" y="0%" width="100%" height="100%"
+            color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.004 0.006" numOctaves="1" seed="7" result="n"/>
+      <feGaussianBlur in="n" stdDeviation="10" result="soft"/>
+      <feDisplacementMap id="glass-refract-map" in="SourceGraphic" in2="soft" scale="28"
+                         xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="island" id="island" data-mode="idle" data-open="0" data-hasart="0"
+     data-notimeline="1" data-waveform="1" data-specular="1" data-module="volume">
+
+  <!-- Layer 1: 动态追光 -->
+  <div class="lg-spotlight" aria-hidden="true"></div>
+  <!-- Layer 2: 菲涅尔镜面边缘（带液态折射） -->
+  <div class="lg-rim" aria-hidden="true"></div>
+
+  <!-- 收起态 -->
+  <div class="stage stage-collapsed">
+    <div class="art art-sm">
+      <img id="art-sm" alt="">
+      <div class="art-glow" aria-hidden="true"></div>
+    </div>
+    <span class="mod-icon" id="mod-icon" aria-hidden="true"></span>
+    <div class="wave" id="wave" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i>
+    </div>
+    <div class="src"><span id="src-collapsed">音量</span><span class="clock" id="clock"></span></div>
+  </div>
+
+  <!-- 展开态 -->
+  <div class="stage stage-expanded">
+    <header class="mod-head">
+      <span class="mod-name" id="mod-name">音量</span>
+      <nav class="mod-dots" id="mod-dots" aria-label="切换模块"></nav>
+    </header>
+    <div class="mod-body" id="mod-body"></div>
+    <footer class="mod-foot" id="mod-foot"></footer>
+  </div>
+
+</div>
+
+<script type="module" src="renderer.js"></script>
+</body>
+</html>
